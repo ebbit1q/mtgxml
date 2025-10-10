@@ -1,0 +1,104 @@
+name: Create mtgxml release on timer
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - '.github/workflows/mtgxml.yaml'
+  workflow_dispatch:
+  schedule:
+    # mtgjson builds release at 9:00 est
+    # to make sure they are live we run at 15:00 utc, one hour after
+    - cron: '0 15 * * *'
+
+concurrency:
+  group: "${{ github.workflow }}"
+
+jobs:
+  release:
+    name: Create and release xml
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download cockatrice.deb
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          source /etc/os-release
+          tag_name=$(gh release list --repo "Cockatrice/Cockatrice" --limit 1 --json tagName --exclude-drafts | jq '.[].tagName' --raw-output)
+          gh release download "$tag_name" \
+            --repo "Cockatrice/Cockatrice" \
+            --pattern "*$NAME$VERSION_ID.deb" \
+            --output "./cockatrice.deb"
+          echo "using version $tag_name"
+
+      - name: Update system
+        shell: bash
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo apt update
+          # sudo apt upgrade -y
+
+      - name: Install cockatrice
+        shell: bash
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: sudo apt install --no-install-recommends "./cockatrice.deb"
+
+      - name: Run oracle
+        shell: bash
+        run: oracle -b -platform minimal
+        # platform minimal is required to work headless
+
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+        # checking out before saving the file, otherwise it'll just get overwritten
+
+      - name: Compress file
+        shell: bash
+        run: |
+          {
+            read -r; echo $REPLY
+            echo "<!--"
+            cat "./fancontentpolicy.md"
+            echo "-->"
+            cat
+          } <"$HOME/.local/share/Cockatrice/Cockatrice/cards.xml" | xz - >mtg.xml.xz
+
+      - name: Remove old releases
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          amount: 10  # keep this many most recent releases, delete all others
+        run: |
+          mapfile -t list < <(gh release list --limit 100 --json tagName --exclude-drafts | jq '.[].tagName' --raw-output)
+          for tag_name in "${list[@]:$amount}"; do
+            echo "deleting $tag_name"
+            gh release delete "$tag_name" --cleanup-tag -y || echo "failed to delete $tag_name"
+          done
+
+      - name: Create release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag_name="$(date --iso-8601)"
+          release_name="mtgxml $tag_name"
+          body_path="./fancontentpolicy.md"
+          if gh release delete "$tag_name" --cleanup-tag -y; then
+            echo "overwriting previous $tag_name release"
+          else
+            echo "creating new release $tag_name"
+          fi
+          gh release create "$tag_name" --draft --latest \
+            --title "$release_name" \
+            --notes-file "$body_path"
+          gh release upload "$tag_name" "mtg.xml.xz"
+          gh release edit "$tag_name" --draft=false
+          echo "::notice::created $release_name, it is available as the latest release"
+          echo "::notice::https://github.com/$GITHUB_REPOSITORY/releases/latest/download/mtg.xml.xz"
