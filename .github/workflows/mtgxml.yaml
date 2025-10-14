@@ -39,14 +39,14 @@ jobs:
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo apt update
-          # sudo apt upgrade -y
+          sudo apt-get remove -y man-db
+          sudo apt-get update
 
       - name: Install cockatrice
         shell: bash
         env:
           DEBIAN_FRONTEND: noninteractive
-        run: sudo apt install --no-install-recommends "./cockatrice.deb"
+        run: sudo apt-get install --no-install-recommends "./cockatrice.deb"
 
       - name: Run oracle
         shell: bash
