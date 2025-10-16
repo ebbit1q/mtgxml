@@ -19,6 +19,9 @@ jobs:
   release:
     name: Create and release xml
     runs-on: ubuntu-latest
+    # the task normally takes 2 minutes, however, in case it stalls, try again
+    # tomorrow
+    timeout-minutes: 15
 
     steps:
       - name: Download cockatrice.deb
@@ -27,7 +30,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           source /etc/os-release
-          tag_name=$(gh release list --repo "Cockatrice/Cockatrice" --limit 1 --json tagName --exclude-drafts | jq '.[].tagName' --raw-output)
+          tag_name=$(gh release list --repo "Cockatrice/Cockatrice" \
+                         --limit 1 --json tagName --exclude-drafts \
+                       | jq '.[].tagName' --raw-output)
           gh release download "$tag_name" \
             --repo "Cockatrice/Cockatrice" \
             --pattern "*$NAME$VERSION_ID.deb" \
@@ -50,8 +55,19 @@ jobs:
 
       - name: Run oracle
         shell: bash
-        run: oracle -b -platform minimal
-        # platform minimal is required to work headless
+        # this step normally takes <1 minute, however if anything fails it will
+        # not exit, rather it will stall indefinitely, waiting for user input
+        # (not text input but button clicks), this is a flaw in oracle's
+        # background mode
+        run: |
+          while
+            timeout 5m oracle -b -platform minimal
+            # platform minimal is required to work headless, -b enables
+            # background mode, times out and restarts after 5 minutes
+            [[ $? == 124 ]] # timeout status 124 means it timed out
+          do
+            echo "::warning::running oracle timed out! retrying..."
+          done
 
       - name: Checkout
         uses: actions/checkout@v5
@@ -59,7 +75,8 @@ jobs:
           sparse-checkout: |
             fancontentpolicy.md
           sparse-checkout-cone-mode: false
-        # checking out before saving the file, otherwise it'll just get overwritten
+        # checking out before saving the file, otherwise it'll just get
+        # overwritten
 
       - name: Compress file
         shell: bash
@@ -70,7 +87,8 @@ jobs:
             cat "./fancontentpolicy.md"
             echo "-->"
             cat
-          } <"$HOME/.local/share/Cockatrice/Cockatrice/cards.xml" | xz - >mtg.xml.xz
+          } <"$HOME/.local/share/Cockatrice/Cockatrice/cards.xml" \
+            | xz - >mtg.xml.xz
 
       - name: Remove old releases
         shell: bash
@@ -78,10 +96,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           amount: 10  # keep this many most recent releases, delete all others
         run: |
-          mapfile -t list < <(gh release list --limit 100 --json tagName --exclude-drafts | jq '.[].tagName' --raw-output)
+          mapfile -t list < <(gh release list --limit 100 \
+                                  --json tagName --exclude-drafts \
+                                | jq '.[].tagName' --raw-output)
           for tag_name in "${list[@]:$amount}"; do
             echo "deleting $tag_name"
-            gh release delete "$tag_name" --cleanup-tag -y || echo "failed to delete $tag_name"
+            gh release delete "$tag_name" --cleanup-tag -y \
+              || echo "failed to delete $tag_name"
           done
 
       - name: Create release
