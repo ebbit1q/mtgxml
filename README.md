@@ -20,8 +20,8 @@ when running the card updater:
 ### use in automatic updates
 ```
 NOTE:
-this feature only works on cockatrice releases released after october 2025!
-if you are using 2.10.2 or earlier you won't be able to use this!
+this feature only works on cockatrice releases released after march 2026!
+if you are using 2.10.3 or earlier you won't be able to use this!
 ```
 cockatrice can be configured to always update in the background with this url, which is very fast and does not use a lot of resources:
 - after using the updater at least once with the new url go to the settings in cockatrice
