@@ -60,6 +60,7 @@ jobs:
         # (not text input but button clicks), this is a flaw in oracle's
         # background mode
         run: |
+          free -m
           high=""
           while :; do
             free=$(free -m)
