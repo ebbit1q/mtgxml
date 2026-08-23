@@ -62,7 +62,7 @@ jobs:
         run: |
           free -m
           high=""
-          while :; do
+          while sleep .5; do
             free=$(free -m)
             LC_ALL=C
             if [[ $free > $high ]]; then
